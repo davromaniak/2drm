@@ -30,12 +30,12 @@ Requirements
 
 Installation
 ------------
-- Give the correct rights in order to execute the __name__ script.
+- Give the correct rights in order to execute the 2drm script.
 
 Usage
 -----
 - First run : 
--- Generate the repository configuration using ./script --root="path" --configure
+-- Generate the repository configuration using ./2drm --root="/folder/repo" --configure
 -- copy the css folder into the repository root folder
 - Add package : 
 -- ./2drm --root="/folder/repo" --dist="squeeze" --component="main" --packages="/tmp/torepo/*.deb"
@@ -46,7 +46,7 @@ Usage
 
 License
 -------
-__SCRIPT__ is distributed under the terms of the GNU General Public 
+2drm is distributed under the terms of the GNU General Public 
 License as published by the Free Software Foundation; either version 2
 of the License, or (at your option) any later version.  A copy of this
 license can be found in the file COPYING included with the program.
