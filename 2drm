@@ -1,0 +1,464 @@
+#!/bin/bash
+#
+#       2drm - Davromaniak's Debian Repository Manager
+#
+#       Copyright 2011 Cyril LAVIER <bainisteoir(at)davromaniak(dot)eu>
+#       
+#       This program is free software; you can redistribute it and/or modify
+#       it under the terms of the GNU General Public License as published by
+#       the Free Software Foundation; either version 2 of the License, or
+#       (at your option) any later version.
+#       
+#       This program is distributed in the hope that it will be useful,
+#       but WITHOUT ANY WARRANTY; without even the implied warranty of
+#       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#       GNU General Public License for more details.
+#       
+#       You should have received a copy of the GNU General Public License
+#       along with this program; if not, write to the Free Software
+#       Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+#       MA 02110-1301, USA.
+#
+
+usage() {
+	echo "USAGE: $0 [OPTIONS]"
+	echo "Script to manage a Debian/Ubuntu repository with and display a website presenting the repository"
+	echo ""
+	echo -e " --root=[folder path]\t\t\t\tAbsolute path of the root folder of the repository (for exemple \"/var/www/myrepo/\")"
+	echo -e " --dist=[distribution]\t\t\t\tDistribution to upgrade (must be configured in the reprepro configuration file)"
+	echo -e " --component=[component]\t\t\tComponent of the repository (must be configured in the reprepro configuration file)"
+	echo -e " --packages=[package1.deb package2.deb]\t\tPackage list to include (Also accepts regex, like \"/tmp/torepo/*_amd64_*.deb\")"
+	echo -e " --gensite\t\t\t\t\tGenerate the website after adding packages"
+	echo -e " --nogensite\t\t\t\t\tDon't generate the website after adding packages"
+	echo -e " --list\t\t\t\t\t\tDisplays a list of dists/components of a repository"
+	echo -e " --help\t\t\t\t\t\tDisplays this help"
+	echo -e "### TODO ###"
+	echo -e " --configure\t\t\t\t\tLaunches the configurator wizard for a new repository"
+}
+
+changelog() {
+	echo "V0.1: ???? ??th 2011 : First release"
+	echo "See the CHANGELOG for more information"
+}
+genlist() {
+	while read title content; do
+		case "$title" in
+			"Suite:")
+				echo "Suite : $content"
+				;;
+			"Components:")
+				echo -n "Components : "
+				echo "$content" | sed -e "s/^/ /" | sed -e "s/ /\n\t- /g"
+				echo ""
+				;;
+		esac
+	done < <(grep -E "^(Suite:|Components:)" $1/conf/distributions) | head -n -1
+}
+
+genlisthtml() {
+	cd $1
+	echo "Suites"
+	echo "<ul>"
+        while read title content; do
+                case "$title" in
+                        "Suite:")
+                                echo "<li id=\"suite\">$content</li>"
+                                ;;
+                        "Components:")
+                                echo -n "<li id=\"component\">Components : </li><li id=\"complist\"><ul><li id=\"componentlist\">"
+                                echo "$content" | sed -e "s; ;</li><li id=\"componentlist\">;g"
+				echo "</li></ul></li>"
+                                ;;
+                esac
+        done < <(grep -E "^(Suite:|Components:)" conf/distributions)
+	echo "</ul>"
+}
+
+gensourceslist() {
+	cd $1
+	echo "<ul id=\"sourcelist\">"
+        while read title content; do
+                case "$title" in
+                        "Suite:")
+                                suite=$content
+                                ;;
+                        "Components:")
+				while read comp; do
+					echo "<li><b>$(echo $suite | sed -e "s/^./\U&/")</b>" "$(echo $comp | sed -e "s/^./\U&/") : deb $2 $suite $comp</li>"
+				done < <(echo "$content" | sed -e "s/ /\n/g")
+				echo "<br/>"
+				unset suite
+                                ;;
+                esac
+        done < <(grep -E "^(Suite:|Components:)" conf/distributions)
+	echo "</ul>" 
+}
+
+genconf() {
+	root=$1
+	echo "## NoName RepoManager configurator ##"
+	echo "### Basic configuration ###"
+	if test -d $root; then
+		echo "The directory $root exists, the configurator will delete all content"
+		crep="42"
+		while [ $crep != "y" ] && [ $crep != "n" ]; do
+			echo "Do you want to continue ? y/n"
+			read crep
+		done
+		if [ $crep == "n" ]; then
+			echo "Ok, quitting..."
+			exit 0
+		elif [ $crep == "y" ]; then
+			echo "Removing all contents on $root"
+			rm -rf $root/*
+		fi
+	else
+		echo "Creating directory..."
+		mkdir -p $root
+		echo "Repository name ?"
+		read reponame	
+		echo "reponame=\"$reponame\"" > $root/.repo.conf
+		echo "URL of the repository ?"
+		read webroot
+		echo "webroot=\"$webroot\"" >> $root/.repo.conf
+		crep="42"
+		while [ $crep != "y" ] && [ $crep != "n" ]; do
+			echo "Do you want to sign the repository ? y/n"
+			read crep
+		done
+		if [ $crep == "y" ]; then
+			echo "Public key ID ?"
+			read pubkeyid
+			echo "pubkeyid=\"$pubkeyid\"" >> $root/.repo.conf
+			echo "Private key ID ?"
+			read privkeyid
+			echo "privkeyid=\"$privkeyid\"" >> $root/.repo.conf
+		elif [ $crep == "n" ]; then
+			echo "pubkeyid=\"\"" >> $root/.repo.conf
+			echo "privkeyid=\"\"" >> $root/.repo.conf
+		fi
+	fi
+	echo "### Basic configuration finished ###"
+	echo "### Reprepro configuration ###"
+	mkdir -p $root/conf/
+	echo "Your name ?"
+	read yourname
+	echo "Origin: $yourname" > $root/conf/distributions
+	echo "Label: $yourname" >> $root/conf/distributions
+	echo "Suite ? (eg. squeeze, wheezy, stable, testing, unstable, etc...)"
+	read suite
+	echo "Suite: $suite" >> $root/conf/distributions
+	echo "Codename: $suite" >> $root/conf/distributions
+	echo "Supported architectures (separated by a space) ?"
+	read archs
+	echo "Architectures: $archs" >> $root/conf/distributions
+	echo "Components (separated by a space) ?"
+	read components
+	echo "Components: $components" >> $root/conf/distributions
+	echo "Description of the repository ?"
+	read repodesc
+	echo "Description: $repodesc" >> $root/conf/distributions
+	echo -e "### Reprepro configuration finished ###\n## NoName RepoManager configurator finished ##"
+	echo "Quitting..."
+	exit 0
+}
+
+checkrequirements() {
+	ret=0
+	for i in sqlite3 reprepro dpkg-scanpackages apt-ftparchive; do
+		which $i > /dev/null
+		if [ $? -gt 0 ]; then
+			echo "$i is missing"
+			ret=1
+		fi
+	done
+	return $ret
+}	
+
+gensite() {
+	cd $1
+	rm -rf packages.*
+
+	source .repo.conf
+
+	test -e deb.db && echo "DROP TABLE packages;" | sqlite3 deb.db
+	echo "CREATE TABLE packages (package TEXT,version TEXT,arch TEXT,filename TEXT,size TEXT,instsize TEXT,desc TEXT,component TEXT, deps TEXT);" | sqlite3 deb.db
+
+	n=0
+	for i in $(find ./ -name Packages); do
+        	while read type content; do
+                	case $type in
+                        	"Package:")
+                                	pkgname=$content
+	                                ;;
+        	                "Version:")
+                	                pkgver=$content
+                        	        ;;
+	                        "Architecture:")
+        	                        pkgarch=$content
+                	                ;;
+                        	"Filename:")
+	                                pkgfname=$content
+        	                        pkgcomponent=$(echo $content | cut -d "/" -f2)
+                	                ;;
+                        	"Installed-Size:")
+	                                pkginstsize=$content
+        	                        ;;
+				"Depends:")
+					pkgdeps=$content
+					;;
+                	        "Size:")
+                        	        pkgsize=$content
+                                	;;
+	                        "Description:")
+        	                        pkgdesc=$content
+                	                echo "INSERT INTO packages (package,version,arch,size,instsize,filename,desc,component,deps) VALUES (\"$pkgname\",\"$pkgver\",\"$pkgarch\",\"$pkgsize\",\"$pkginstsize\",\"$pkgfname\",\"$pkgdesc\",\"$pkgcomponent\",\"$pkgdeps\");"
+                        	        unset pkgname pkgver pkgarch pkgfname pkgdesc pkgcomponent pkgdeps
+                                	;;
+	                esac
+        	done < <(grep -E "^(Package:|Version:|Architecture:|Filename:|Description:|Size:|Installed-Size:|Depends:)" $i | sed -e "s/^Package/---\nPackage/g")
+	done  | sort | uniq | sqlite3 deb.db
+source .repo.conf
+	while read arch; do
+        	mkdir packages.$arch
+	        while read pkg; do
+        	        cat >> packages.$arch/${pkg}.htm << EOF
+<head>
+        <title>Package $pkg</title>
+        <link rel="stylesheet" type="text/css" href="/css/styles.css">
+        <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+        <script type="text/javascript" src="/css/js.js"></script> 
+</head>
+<body>
+<div id="container">
+<div id="title"><h1>PACKAGE $pkg</h1></div>
+<div id="content">
+EOF
+
+        	        while read pkgcomponent; do
+	                        echo "<h2><a href=\"#\" onclick=\"toggle('compo"$pkgcomponent"');\">COMPONENT : $pkgcomponent</a></h2><div style=\"display:none;\" class=\"compo\" id=\"compo"$pkgcomponent"\">" >> packages.$arch/${pkg}.htm
+                        	while read pkgrelease; do
+                	                pkgver=$(echo $pkgrelease | awk -F "|" '{print $1}')
+        	                        pkgfname=$(echo $pkgrelease | awk -F "|" '{print $2}')
+	                                pkgsize=$(echo $pkgrelease | awk -F "|" '{print $3}')
+                                	pkginstsize=$(echo $pkgrelease | awk -F "|" '{print $4}')
+                        	        pkgdesc=$(echo $pkgrelease | awk -F "|" '{print $5}')
+                	                pkgcomponent=$(echo $pkgrelease | awk -F "|" '{print $6}')
+					echo "<ul id="ulcompo$pkgcomponent"><li id=\"pkgver\">Version : $pkgver</li><li id=\"pkglist\"><ul><li id=\"pkginfo\">Filename : $pkgfname</li><li id=\"pkginfo\">Size : $pkgsize B</li><li id=\"pkginfo\">Installed Size : $pkginstsize B</li><li id=\"pkginfo\">Description : $pkgdesc</li></ul></li></ul>" >> packages.$arch/${pkg}.htm
+	                        done < <(echo "SELECT version, filename, size, instsize, desc, component, deps from packages WHERE arch=\"$arch\" AND package=\"$pkg\" AND component=\"$pkgcomponent\" ORDER BY version DESC;" | sqlite3 deb.db)
+				echo "</div>" >> packages.$arch/${pkg}.htm
+        	        done < <(echo "SELECT DISTINCT component from packages WHERE arch=\"$arch\" AND package=\"$pkg\" ORDER BY component DESC;" | sqlite3 deb.db)
+		echo "<div id=\"footer\">Return to <a href=\"$webroot\">homepage</a></div></div></div></body></html>" >> packages.$arch/${pkg}.htm
+        	done < <(echo "SELECT DISTINCT package from packages WHERE arch=\"$arch\";" | sqlite3 deb.db)
+	done < <(echo "SELECT DISTINCT arch from packages;" | sqlite3 deb.db)
+	cat > index.htm << EOF
+<head>
+        <title>$reponame</title>
+        <link rel="stylesheet" type="text/css" href="/css/styles.css">
+        <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+        <script type="text/javascript" src="/css/js.js"></script> 
+</head>
+<body>
+<div id="container">
+EOF
+if [ -e title.png ]; then
+	echo "<div id=\"title\"><img src=\"title.png\" alt=\"$reponame\"/></div>"
+else
+	echo "<div id=\"title\"><h1>$reponame</h1></div>"
+fi >> index.htm
+cat >> index.htm << EOF
+<div id="content">
+<div id="reposourceslist">
+<h2>Lines to add to the /etc/apt/sources.list file</h2>
+$(gensourceslist $1 $webroot)
+EOF
+if [ x$pubkeyid != "x" ]; then
+	echo "<h2>GPG KEY import</h2>"
+	echo "<p id="gpgkey">wget $webroot/key.asc -O - | apt-key add -</p>"
+fi >> index.htm
+cat >> index.htm << EOF
+</div>
+<div id="repopackages">
+<h2><a href="#" onclick="toggle('ulpkg');">Packages</a></h2>
+<ul style="display:none;" id="ulpkg">
+EOF
+	x=1
+	while read pkg; do
+        	pkgname=${pkg%.htm}
+	        if [ $x == "1" ]; then
+        	        letter=${pkgname:0:1}
+	                echo "<li id=\"letter\">$letter</li>"
+        	        echo "<li id=\"pkglist\"><ul>"
+                	x=2
+	        else
+        	        newletter=${pkgname:0:1}
+                	if [ $newletter != $letter ]; then
+                        	echo "</ul></li>"
+	                        echo "<li id=\"letter\">$newletter</li>"
+        	                echo "<li id=\"pkglist\"><ul>"
+	                        letter=$newletter
+        	        fi
+	        fi
+        	archs=$(find packages.* -name $pkg -type f | sed -e "s;^packages.\(.*\)/.*$;<a href='./packages.\1/$pkg'>\1</a> ;" | tr -d "\n")
+	        echo "<li id=\"pkg\">${pkgname} - $archs</li>"
+	done < <(find packages.* -type f | cut -d "/" -f2 | sort | uniq) >> index.htm
+	echo "</ul></ul></div>" >> index.htm
+	echo "<div id=\"npackages\">Package count : $(echo "SELECT count() FROM packages;" | sqlite3 deb.db)</div>" >> index.htm
+	date +\<div\ id=\"footer\"\>Page\ last\ generated\ on\ %Y/%m/%d\ at\ %H:%M:%S\ GMT%:::z\</div\> >> index.htm
+	echo "</div></div></div></body></html>" >> index.htm
+}
+
+dolist="0"
+doconfigure="0"
+dogensite="0"
+nogensite="0"
+
+# Parsing arguments
+
+set -- `getopt -n$0 -u --longoptions="root: dist: component: packages: gensite list nogensite help version changelog configure" "r:d:c:p:glnhvab" "$@"`
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-h|--help)
+			usage
+			exit 0
+			;;
+		-v|--version)
+			echo "NoName RepoManager V0.1"
+			echo "Written by Cyril Lavier <bainisteoir(at)davromaniak(dot)eu>"
+			exit 0
+			;;
+		-a|--changelog)
+			changelog
+			exit 0
+			;;
+		-r|--root)
+			root=$2
+			shift
+			;;
+		-d|--dist)
+			dist=$2
+			shift
+			;;
+		-c|--component)
+			component=$2
+			shift
+			;;
+		-a|--configure)
+			doconfigure="1"
+			;;
+		-g|--gensite)
+			dogensite="1"
+			;;
+		-n|--nogensite)
+			nogensite="1"
+			;;
+		-l|--list)
+			dolist="1"
+			;;
+		-p|--packages)
+			packages=$2
+			shift
+			echo $2 | grep -vq "^-"
+			v=$?
+			while [ $v -eq "0" ]; do
+				packages=$packages" "$2
+				shift
+				if [ "x"$2 == "x" ]; then
+					v=1
+				else
+					echo $2 | grep -vq "^-"
+					v=$?
+				fi
+			done
+			shift
+			;;
+		--)
+			break
+			;;
+	esac
+	shift
+done
+
+checkrequirements
+if [ $? -gt 0 ]; then
+	echo "Please install the missing tools and rerun the Davromaniak's Debian Repository Manager"
+	exit 12
+fi
+
+if [ $doconfigure == "1" ]; then
+	genconf $root	
+fi
+
+if [ "x"$root == "x" ]; then
+	echo "ERROR : Repository root path not given"
+	exit 1
+else
+	test -d $root
+	if [ $? -gt 0 ]; then
+		echo "Directory $root doesn't exists, please rerun the NoName RepoManager with the --configure argument"
+		exit 11
+	fi
+fi
+if [ $dolist == "1" ]; then
+        genlist $root
+        exit 0
+fi
+if [ $dogensite == "1" ]; then
+        gensite $root
+        exit 0
+fi
+if [ "x"$dist == "x" ]; then
+	echo "ERROR : Distribution not given"
+	exit 2
+fi
+if [ "x"$component == "x" ]; then 
+	echo "ERROR : Component not given"
+	exit 3
+fi
+if [ "x$packages" == "x" ]; then
+	echo "ERROR : Package regex or list not given"
+	exit 4
+fi
+
+cd $root
+
+source .repo.conf
+
+crep="y"
+reprepro --keepunreferencedfiles -C $component -b . includedeb $dist $packages 1> /dev/null || crep="42"
+while [ $crep != "y" ] && [ $crep != "n" ]; do
+	echo "Reprepro returned and error, Continue ? [y/n]"
+	read crep
+done
+if [ $crep == "n" ]; then
+	echo "Interrupted by user"
+	exit 5
+fi
+
+for i in $(find ./ -name Packages -exec dirname {} \; | grep $component); do
+	arch=$(basename $i | cut -d "-" -f2-)
+	dpkg-scanpackages -a $arch -m pool/$component /dev/null 2> /dev/null | tee $i/Packages | gzip -9c > $i/Packages.gz
+done
+
+if [ x$privkeyid != "x" ]; then
+	if [ x$pubkeyid != "x" ]; then
+		which gpg > /dev/null
+		if [ $? -gt 0 ]; then
+			echo "GPG is missing, please install it to sign this repository"
+			exit 13
+		else
+			rm -f dists/$dist/Release.gpg
+			gpg -abs --default-key $privkeyid -o dists/$dist/Release.gpg dists/$dist/Release
+			gpg --export -a $pubkeyid > key.asc
+		fi
+	fi
+fi
+
+for i in $(find dists/ -mindepth 1 -maxdepth 1 -type d); do 
+	apt-ftparchive release $i/ > $i/Release
+done
+
+if [ $nogensite == "0" ]; then
+        gensite $root
+        exit 0
+fi

@@ -1,0 +1,60 @@
+2DRM (Davromaniak's Debian Repository Manager) - A script for Debian/Ubuntu repository admins
+---------------------------------------------------------------------------------------------
+
+Warning
+-------
+Now, 2drm is at a very early stage of development, even if I develop it since 2010, he was a quick and dirty script before the creation of the github project and the first commit.
+
+The first commit includes a big amount of clean fixes and pebkac-proof mecanisms, but 2drm is still not stable.
+
+About
+-----
+Script to manage a Debian/Ubuntu repository with and generate a website presenting the repository
+
+Why this name
+-------------
+It's a pun between my nickname and the DRM technology, which is dumb and useless.
+
+Requirements
+------------
+- bash
+- wget
+- grep
+- sed
+- getopt
+- sqlite3
+- reprepro
+- dpkg-scanpackages
+- apt-ftparchive
+- gpg (if you want the repository to be signed)
+
+Installation
+------------
+- Give the correct rights in order to execute the __name__ script.
+
+Usage
+-----
+- First run : 
+-- Generate the repository configuration using ./script --root="path" --configure
+-- copy the css folder into the repository root folder
+- Add package : 
+-- ./2drm --root="/folder/repo" --dist="squeeze" --component="main" --packages="/tmp/torepo/*.deb"
+- Remove package :
+-- TODO
+- List dists and components : 
+-- ./2drm --root="/folder/repo" --list
+
+License
+-------
+__SCRIPT__ is distributed under the terms of the GNU General Public 
+License as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.  A copy of this
+license can be found in the file COPYING included with the program.
+
+Ideas, questions, patches and bug reports
+-----------------------------------------
+Send me a mail, and I will answer you, :).
+
+--
+2011 by Cyril Lavier
+bainisteoir(at)davromaniak(dot)eu
