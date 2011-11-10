@@ -96,7 +96,7 @@ gensourceslist() {
 
 genconf() {
 	root=$1
-	echo "## NoName RepoManager configurator ##"
+	echo "## Davromaniak's Debian Repository Manager configurator ##"
 	echo "### Basic configuration ###"
 	if test -d $root; then
 		echo "The directory $root exists, the configurator will delete all content"
@@ -158,7 +158,7 @@ genconf() {
 	echo "Description of the repository ?"
 	read repodesc
 	echo "Description: $repodesc" >> $root/conf/distributions
-	echo -e "### Reprepro configuration finished ###\n## NoName RepoManager configurator finished ##"
+	echo -e "### Reprepro configuration finished ###\n## Davromaniak's Debian Repository Manager configurator finished ##"
 	echo "Quitting..."
 	exit 0
 }
@@ -323,7 +323,7 @@ while [ $# -gt 0 ]; do
 			exit 0
 			;;
 		-v|--version)
-			echo "NoName RepoManager V0.1"
+			echo "Davromaniak's Debian Repository Manager (2drm) V0.1"
 			echo "Written by Cyril Lavier <bainisteoir(at)davromaniak(dot)eu>"
 			exit 0
 			;;
@@ -395,7 +395,7 @@ if [ "x"$root == "x" ]; then
 else
 	test -d $root
 	if [ $? -gt 0 ]; then
-		echo "Directory $root doesn't exists, please rerun the NoName RepoManager with the --configure argument"
+		echo "Directory $root doesn't exists, please rerun the Davromaniak's Debian Repository Manager with the --configure argument"
 		exit 11
 	fi
 fi
